@@ -780,7 +780,8 @@ void sccp_channel_openReceiveChannel(constChannelPtr channel)
 	sccp_rtp_t * audio = (sccp_rtp_t *)&(channel->rtp.audio);
 
 	if(channel->isHangingUp || !channel->owner || pbx_check_hangup_locked(channel->owner) || pbx_channel_hangupcause(channel->owner) == AST_CAUSE_ANSWERED_ELSEWHERE) {
-		pbx_log(LOG_ERROR, "%s: (%s) Channel already hanging up\n", channel->designator, __func__);
+		pbx_log(LOG_ERROR, "%s: (%s) Channel already hanging up (isHangingUp:%s, hasNoOwner:%s, hangupLocked:%s, hangupcause:%d, elsewhere)\n", channel->designator, __func__, channel->isHangingUp ? "TRUE" : "FALSE",
+			!channel->owner ? "TRUE" : "FALSE", pbx_check_hangup_locked(channel->owner) ? "TRUE" : "FALSE", pbx_channel_hangupcause(channel->owner), AST_CAUSE_ANSWERED_ELSEWHERE);
 		return;
 	}
 
@@ -1871,11 +1872,14 @@ void sccp_channel_answer(constDevicePtr device, channelPtr channel)
 		if(pbx_channel_state(pbx_channel) == AST_STATE_RINGING && !pbx_check_hangup_locked(pbx_channel) && !channel->privateData->isAnswering) {
 			channel->setDevice(channel, device);
 			channel->privateData->isAnswering = TRUE;
+			uint16_t lineInstance = sccp_device_find_index_for_line(device, channel->line->name);
 			if (channel->state != SCCP_CHANNELSTATE_OFFHOOK) {	/* 7911 need to have callstate offhook, before connected, to transmit audio */
-				sccp_indicate(device, channel, SCCP_CHANNELSTATE_OFFHOOK);
+				// sccp_indicate(device, channel, SCCP_CHANNELSTATE_OFFHOOK);
+				sccp_device_sendcallstate(device, lineInstance, channel->callid, SKINNY_CALLSTATE_OFFHOOK, SKINNY_CALLPRIORITY_LOW, SKINNY_CALLINFO_VISIBILITY_DEFAULT);
+				sccp_dev_set_cplane(device, lineInstance, 1);
+				// channel->setTone(channel, SKINNY_TONE_SILENCE, SKINNY_TONEDIRECTION_USER);
 			}
 			pbx_setstate(pbx_channel, AST_STATE_OFFHOOK);
-			uint16_t lineInstance = sccp_device_find_index_for_line(device, channel->line->name);
 			sccp_device_sendcallstate(device, lineInstance, channel->callid, SKINNY_CALLSTATE_CONNECTED, SKINNY_CALLPRIORITY_LOW,
 						  SKINNY_CALLINFO_VISIBILITY_DEFAULT);	// send connected, so it is not listed as missed call on device that fail the answer first
 			sccp_rtp_setCallback(&channel->rtp.audio, SCCP_RTP_RECEPTION, channel_answer_completion);
